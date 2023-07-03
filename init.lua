@@ -98,7 +98,7 @@ local utils = {
             return t1
         end,
         contains = function(table, value)
-            for k, v in ipairs(table) do
+            for _, v in ipairs(table) do
                 if v == value or (type(v) == "table" and hasValue(v, value)) then
                     return true
                 end
@@ -323,11 +323,31 @@ local createTrelloCard = function(board, list)
     end)
 end
 
+local moveTrelloCard = function(card, list)
+    local queryParams = {
+        ['idList'] = list.id,
+        ['pos'] = 'top',
+        ['idMembers'] = env('API_USER_ID')
+    }
+    hs.http.asyncPut(buildUrl('/cards/' .. card.id), hs.json.encode(queryParams), authHeaders(), function(status, result)
+        if (status ~= 200) then
+            notify.error('Failed to create the Trello Card.');
+            console.log(result);
+        else
+            notify.success('Successfully moved "'.. card.name ..'" to ' .. list.name .. '.');
+        end
+    end)
+end
+
 function obj:init()
     local choices = {
         {
             text = 'Create a task',
             id = 'CREATE_CARD',
+        },
+        {
+            text = 'Update task state',
+            id = 'MOVE_CARD',
         },
         {
             text = 'View board in web browser',
@@ -341,15 +361,23 @@ function obj:init()
     hs.hotkey.bind({ "ctrl", "cmd" }, "t", function()
         hs.chooser.new(function(choice)
             if (choice ~= nil) then
-                if (choice.id == 'OPEN_BOARD_IN_BROWSER') then
-                    selectTrelloBoard(function(board)
-                        openUrl(board.url);
-                    end);
-                elseif (choice.id == 'CREATE_CARD') then
+                if (choice.id == 'CREATE_CARD') then
                     selectTrelloBoard(function(board)
                         selectTrelloBoardList(board, function(list)
                             createTrelloCard(board, list)
                         end)
+                    end);
+                elseif (choice.id == 'MOVE_CARD') then
+                    selectTrelloBoard(function(board)
+                        selectTrelloBoardCard(board, function(card)
+                            selectTrelloBoardList(board, function(list)
+                                moveTrelloCard(card, list)
+                            end)
+                        end)
+                    end);
+                elseif (choice.id == 'OPEN_BOARD_IN_BROWSER') then
+                    selectTrelloBoard(function(board)
+                        openUrl(board.url);
                     end);
                 elseif (choice.id == 'VIEW_CARD_IN_BROWSER') then
                     selectTrelloBoard(function(board)
