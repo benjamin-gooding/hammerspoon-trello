@@ -2,9 +2,6 @@ local obj = {}
 obj.__index = obj
 
 local config = {
-    auth = {
-
-    },
     chromium_browsers = {
         "com.google.chrome",
         "com.brave.browser",
@@ -67,6 +64,26 @@ function notify.createChain()
     }
 end
 
+local console = {
+    log = function(data)
+        function dump(o)
+            if type(o) == 'table' then
+                local s = '{ '
+                for k, v in pairs(o) do
+                    if type(k) ~= 'number' then
+                        k = '"' .. k .. '"'
+                    end
+                    s = s .. '[' .. k .. '] = ' .. dump(v) .. ','
+                end
+                return s .. '} '
+            else
+                return tostring(o)
+            end
+        end
+        hs.console.printStyledtext(dump(data));
+    end
+}
+
 local utils = {
     string = {
         trim = function(s)
@@ -88,30 +105,65 @@ local utils = {
             end
             return false
         end
+    },
+    envFile = {
+        read = function(path)
+            local file = io.open(path, "r")
+            if file then
+                local envTable = {}
+                for line in file:lines() do
+                    local key, value = line:match("^%s*([^=]+)%s*=%s*(.*)%s*$")
+                    if key then
+                        envTable[key] = value
+                    end
+                end
+                file:close()
+                return envTable
+            end
+            return nil;
+        end,
+        create = function(path, envData)
+            local content = '';
+            for key, value in pairs(envData) do
+                content = content .. key .. '=' .. value .. '\n';
+            end
+            local file = io.open(path, "w+")
+            console.log('here')
+            console.log(file)
+
+            if file then
+                file:write(content)
+                file:close()
+                return true
+            else
+                return false
+            end
+        end,
     }
 }
 
-local console = {
-    log = function(data)
-        function dump(o)
-            if type(o) == 'table' then
-                local s = '{ '
-                for k, v in pairs(o) do
-                    if type(k) ~= 'number' then
-                        k = '"' .. k .. '"'
-                    end
-                    s = s .. '[' .. k .. '] = ' .. dump(v) .. ','
-                end
-                return s .. '} '
-            else
-                return tostring(o)
-            end
-        end
-        hs.console.printStyledtext(dump(data));
+local env = function(key)
+    local defaultNewEnvValue = 'ADD_YOURS_HERE';
+    local envFilePath = hs.fs.pathToAbsolute('~/') .. '/.trellospoon';
+    local envTable = utils.envFile.read(envFilePath);
+    if (envTable == nil) then
+        envTable = {
+            ['API_TOKEN'] = defaultNewEnvValue,
+            ['API_CONSUMER_KEY'] = defaultNewEnvValue,
+            ['API_USER_ID'] = defaultNewEnvValue,
+        };
+        utils.envFile.create(envFilePath, envTable)
     end
-}
+    if (envTable[key] == nil) then
+        notify.error('The property "' .. key .. '" does not exist in the "'.. envFilePath .. '"');
+    end
+    if (envTable[key] == defaultNewEnvValue) then
+        notify.error('The property "' .. key .. '" needs to be updated in the "'.. envFilePath .. '" file');
+    end
+    return envTable[key];
+end
 
-local function openUrl(url)
+local openUrl = function(url)
     local defaultBrowser = utils.string.trim(hs.execute([[
         defaults read ~/Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure | awk -F'\"' '/http;/{print window[(NR)-1]}{window[NR]=$2}'
 	]]))
@@ -155,14 +207,19 @@ end;
 local authHeaders = function()
     return {
         ["Content-Type"] = "application/json",
-        ["Authorization"] = 'OAuth oauth_consumer_key="' .. config.auth.apiKey .. '", oauth_token="' .. config.auth.token .. '"'
+        ["Authorization"] = 'OAuth oauth_consumer_key="' .. env('API_CONSUMER_KEY') .. '", oauth_token="' .. env('API_TOKEN') .. '"'
     }
 end;
 
 local selectTrelloBoard = function(callback)
-    hs.http.asyncGet(buildUrl('/members/' .. config.auth.userId .. '/boards?lists=open'), authHeaders(), function(status, result)
+    hs.http.asyncGet(buildUrl('/members/' .. env('API_USER_ID') .. '/boards?lists=open'), authHeaders(), function(status, result)
         if (status == 200) then
             local jsonResult = hs.json.decode(result);
+
+            table.sort(jsonResult, function(a, b)
+                return a.idMemberCreator == env('API_USER_ID') or b.idMemberCreator == env('API_USER_ID');
+            end)
+
             local choices = {};
             for _, board in pairs(jsonResult) do
                 table.insert(choices, {
@@ -193,7 +250,7 @@ local selectTrelloBoardCard = function(board, callback)
             local jsonResult = hs.json.decode(result);
             local choices = {};
             for _, card in pairs(jsonResult) do
-                if(utils.table.contains(card.idMembers, config.auth.userId)) then
+                if (utils.table.contains(card.idMembers, env('API_USER_ID'))) then
                     table.insert(choices, {
                         text = card.name,
                         subText = card.desc,
@@ -246,7 +303,7 @@ local selectTrelloBoardList = function(board, callback)
 end
 
 local createTrelloCard = function(board, list)
-    local _, userInput = hs.dialog.textPrompt('Add a new task to the"'.. list.name ..'" list on the "' .. board.name .. '" board.', '', '', 'Add', 'Cancel');
+    local _, userInput = hs.dialog.textPrompt('Add a new task to the"' .. list.name .. '" list on the "' .. board.name .. '" board.', '', '', 'Add', 'Cancel');
     if (userInput == '') then
         return
     end
@@ -254,7 +311,7 @@ local createTrelloCard = function(board, list)
         ['idList'] = list.id,
         ['name'] = userInput,
         ['pos'] = 'bottom',
-        ['idMembers'] = config.auth.userId
+        ['idMembers'] = env('API_USER_ID')
     }
     hs.http.asyncPost(buildUrl('/cards'), hs.json.encode(queryParams), authHeaders(), function(status, result)
         if (status ~= 200) then
@@ -267,7 +324,6 @@ local createTrelloCard = function(board, list)
 end
 
 function obj:init()
-    console.log('-----------------------------------------------------------------------');
     local choices = {
         {
             text = 'Create a task',
@@ -285,17 +341,17 @@ function obj:init()
     hs.hotkey.bind({ "ctrl", "cmd" }, "t", function()
         hs.chooser.new(function(choice)
             if (choice ~= nil) then
-                if(choice.id == 'OPEN_BOARD_IN_BROWSER') then
+                if (choice.id == 'OPEN_BOARD_IN_BROWSER') then
                     selectTrelloBoard(function(board)
                         openUrl(board.url);
                     end);
-                elseif(choice.id == 'CREATE_CARD') then
+                elseif (choice.id == 'CREATE_CARD') then
                     selectTrelloBoard(function(board)
                         selectTrelloBoardList(board, function(list)
                             createTrelloCard(board, list)
                         end)
                     end);
-                elseif(choice.id == 'VIEW_CARD_IN_BROWSER') then
+                elseif (choice.id == 'VIEW_CARD_IN_BROWSER') then
                     selectTrelloBoard(function(board)
                         selectTrelloBoardCard(board, function(card)
                             openUrl(card.url);
