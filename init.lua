@@ -112,16 +112,26 @@ local console = {
 }
 
 local buildUrl = function(path, queryParams)
-    local url = 'https://api.trello.com/'.. path ..'?key='.. config.auth.apiKey ..'&token='.. config.auth.token;
-    for key, value in pairs(queryParams) do
-        url = url .. '&' .. key ..'='..value
+    local url = 'https://api.trello.com/1' .. path;
+    if (queryParams ~= nil) then
+        url = url .. '?';
+        for key, value in pairs(queryParams) do
+            url = url .. '&' .. key .. '=' .. value
+        end
     end
     return url;
 end;
 
+local authHeaders = function()
+    return {
+        ["Content-Type"] = "application/json",
+        ["Authorization"] = 'OAuth oauth_consumer_key="' .. config.auth.apiKey .. '", oauth_token="' .. config.auth.token .. '"'
+    }
+end;
+
 local selectTrelloBoard = function(callback)
-    hs.http.asyncGet(buildUrl('1/members/'.. config.auth.userId ..'/boards', {lists = 'open'}), {}, function(status, result)
-        if(status == 200) then
+    hs.http.asyncGet(buildUrl('/members/' .. config.auth.userId .. '/boards?lists=open'), authHeaders(), function(status, result)
+        if (status == 200) then
             local jsonResult = hs.json.decode(result);
             local choices = {};
             for _, board in pairs(jsonResult) do
@@ -139,7 +149,7 @@ local selectTrelloBoard = function(callback)
               :rows(5)
               :selectedRow(1)
               :width(30)
-              :placeholderText('Select the trello board you want to create a card on')
+              :placeholderText('Select a Board...')
               :searchSubText(true)
               :choices(choices)
               :show()
@@ -147,17 +157,66 @@ local selectTrelloBoard = function(callback)
     end)
 end
 
-local createNewTaskOnBoard = function(board)
-    console.log(board);
+local selectTrelloBoardList = function(board, callback)
+    hs.http.asyncGet(buildUrl('/boards/' .. board.id .. '/lists'), authHeaders(), function(status, result)
+        if (status == 200) then
+            local jsonResult = hs.json.decode(result);
+            local choices = {};
+            for _, list in pairs(jsonResult) do
+                table.insert(choices, {
+                    text = list.name,
+                    subText = list.desc,
+                    list = list
+                });
+            end
+            hs.chooser.new(function(choice)
+                if (choice ~= nil) then
+                    callback(choice.list)
+                end
+            end)
+              :rows(5)
+              :selectedRow(1)
+              :width(30)
+              :placeholderText('Select a List...')
+              :searchSubText(true)
+              :choices(choices)
+              :show()
+        end
+    end)
+end
+
+local createTrelloCardOnBoardList = function(board, list)
+    local _, userInput = hs.dialog.textPrompt('Add a new task to the"'.. list.name ..'" list on the "' .. board.name .. '" board.', '', '', 'Add', 'Cancel');
+    if (userInput == '') then
+        return
+    end
+    local queryParams = {
+        ['idList'] = list.id,
+        ['name'] = userInput,
+        ['pos'] = 'bottom',
+        ['idMembers'] = config.auth.userId
+    }
+    hs.http.asyncPost(buildUrl('/cards'), hs.json.encode(queryParams), authHeaders(), function(status, result)
+        if (status ~= 200) then
+            notify.error('Failed to create the Trello Card.');
+            console.log(result);
+        else
+            notify.success('Successfully created a card in ' .. list.name .. ' on the ' .. board.name .. ' board.');
+        end
+    end)
 end
 
 function obj:createTrelloTodoItem()
-    selectTrelloBoard(createNewTaskOnBoard);
+    selectTrelloBoard(function(board)
+        selectTrelloBoardList(board, function(list)
+            createTrelloCardOnBoardList(board, list)
+        end)
+    end);
 end
 
 function obj:init()
     console.log('-----------------------------------------------------------------------');
-    hs.hotkey.bind({"ctrl", "cmd"}, "t", obj.createTrelloTodoItem);
+    hs.hotkey.bind({ "ctrl", "cmd" }, "t", obj.createTrelloTodoItem);
 end
 
 return obj
