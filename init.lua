@@ -303,6 +303,7 @@ local selectTrelloBoardList = function(board, callback)
 end
 
 local createTrelloCard = function(board, list)
+    hs.focus()
     local _, userInput = hs.dialog.textPrompt('Add a new task to the"' .. list.name .. '" list on the "' .. board.name .. '" board.', '', '', 'Add', 'Cancel');
     if (userInput == '') then
         return
