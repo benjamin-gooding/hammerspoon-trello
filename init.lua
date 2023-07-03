@@ -111,6 +111,36 @@ local console = {
     end
 }
 
+local function openUrl(url)
+    local defaultBrowser = utils.string.trim(hs.execute([[
+        defaults read ~/Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure | awk -F'\"' '/http;/{print window[(NR)-1]}{window[NR]=$2}'
+	]]))
+
+    if (utils.table.contains(config.chromium_browsers, defaultBrowser)) then
+        hs.osascript.applescript([[
+            tell application id "]] .. defaultBrowser .. [["
+                repeat with w in windows
+                    set i to 1
+                    repeat with t in tabs of w
+                        if URL of t starts with "]] .. url .. [[" then
+                            set active tab index of w to i
+                            set index of w to 1
+                            activate
+                            return
+                        end if
+                        set i to i + 1
+                    end repeat
+                end repeat
+                open location "]] .. url .. [["
+            end tell
+        ]])
+    else
+        hs.osascript.applescript([[
+    	    open location "]] .. url .. [["
+        ]])
+    end
+end
+
 local buildUrl = function(path, queryParams)
     local url = 'https://api.trello.com/1' .. path;
     if (queryParams ~= nil) then
@@ -157,6 +187,36 @@ local selectTrelloBoard = function(callback)
     end)
 end
 
+local selectTrelloBoardCard = function(board, callback)
+    hs.http.asyncGet(buildUrl('/boards/' .. board.id .. '/cards'), authHeaders(), function(status, result)
+        if (status == 200) then
+            local jsonResult = hs.json.decode(result);
+            local choices = {};
+            for _, card in pairs(jsonResult) do
+                if(utils.table.contains(card.idMembers, config.auth.userId)) then
+                    table.insert(choices, {
+                        text = card.name,
+                        subText = card.desc,
+                        card = card
+                    });
+                end
+            end
+            hs.chooser.new(function(choice)
+                if (choice ~= nil) then
+                    callback(choice.card)
+                end
+            end)
+              :rows(5)
+              :selectedRow(1)
+              :width(30)
+              :placeholderText('Select a Card...')
+              :searchSubText(true)
+              :choices(choices)
+              :show()
+        end
+    end)
+end
+
 local selectTrelloBoardList = function(board, callback)
     hs.http.asyncGet(buildUrl('/boards/' .. board.id .. '/lists'), authHeaders(), function(status, result)
         if (status == 200) then
@@ -185,7 +245,7 @@ local selectTrelloBoardList = function(board, callback)
     end)
 end
 
-local createTrelloCardOnBoardList = function(board, list)
+local createTrelloCard = function(board, list)
     local _, userInput = hs.dialog.textPrompt('Add a new task to the"'.. list.name ..'" list on the "' .. board.name .. '" board.', '', '', 'Add', 'Cancel');
     if (userInput == '') then
         return
@@ -206,17 +266,52 @@ local createTrelloCardOnBoardList = function(board, list)
     end)
 end
 
-function obj:createTrelloTodoItem()
-    selectTrelloBoard(function(board)
-        selectTrelloBoardList(board, function(list)
-            createTrelloCardOnBoardList(board, list)
-        end)
-    end);
-end
-
 function obj:init()
     console.log('-----------------------------------------------------------------------');
-    hs.hotkey.bind({ "ctrl", "cmd" }, "t", obj.createTrelloTodoItem);
+    local choices = {
+        {
+            text = 'Create a task',
+            id = 'CREATE_CARD',
+        },
+        {
+            text = 'View board in web browser',
+            id = 'OPEN_BOARD_IN_BROWSER',
+        },
+        {
+            text = 'View task in web browser',
+            id = 'VIEW_CARD_IN_BROWSER',
+        }
+    }
+    hs.hotkey.bind({ "ctrl", "cmd" }, "t", function()
+        hs.chooser.new(function(choice)
+            if (choice ~= nil) then
+                if(choice.id == 'OPEN_BOARD_IN_BROWSER') then
+                    selectTrelloBoard(function(board)
+                        openUrl(board.url);
+                    end);
+                elseif(choice.id == 'CREATE_CARD') then
+                    selectTrelloBoard(function(board)
+                        selectTrelloBoardList(board, function(list)
+                            createTrelloCard(board, list)
+                        end)
+                    end);
+                elseif(choice.id == 'VIEW_CARD_IN_BROWSER') then
+                    selectTrelloBoard(function(board)
+                        selectTrelloBoardCard(board, function(card)
+                            openUrl(card.url);
+                        end)
+                    end);
+                end
+            end
+        end)
+          :rows(5)
+          :selectedRow(1)
+          :width(30)
+          :placeholderText('Select an action...')
+          :searchSubText(true)
+          :choices(choices)
+          :show()
+    end);
 end
 
 return obj
