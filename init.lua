@@ -265,10 +265,39 @@ local selectTrelloBoard = function(callback)
                     callback(choice.board)
                 end
             end)
-              :rows(5)
+              :rows(1)
               :selectedRow(1)
               :width(30)
               :placeholderText('Select a Board...')
+              :searchSubText(true)
+              :choices(choices)
+              :show()
+        end
+    end)
+end
+
+local selectTrelloBoardList = function(board, callback)
+    hs.http.asyncGet(buildUrl('/boards/' .. board.id .. '/lists'), authHeaders(), function(status, result)
+        if (status == 200) then
+            local jsonResult = hs.json.decode(result);
+            local choices = {};
+            for _, list in pairs(jsonResult) do
+                table.insert(choices, {
+                    text = list.name,
+                    subText = list.desc,
+                    list = list,
+                    image = trelloIcon(board.prefs.backgroundTopColor)
+                });
+            end
+            hs.chooser.new(function(choice)
+                if (choice ~= nil) then
+                    callback(choice.list)
+                end
+            end)
+              :rows(2)
+              :selectedRow(1)
+              :width(30)
+              :placeholderText('Select a List...')
               :searchSubText(true)
               :choices(choices)
               :show()
@@ -299,35 +328,6 @@ local selectTrelloBoardCard = function(board, callback)
               :selectedRow(1)
               :width(30)
               :placeholderText('Select a Card...')
-              :searchSubText(true)
-              :choices(choices)
-              :show()
-        end
-    end)
-end
-
-local selectTrelloBoardList = function(board, callback)
-    hs.http.asyncGet(buildUrl('/boards/' .. board.id .. '/lists'), authHeaders(), function(status, result)
-        if (status == 200) then
-            local jsonResult = hs.json.decode(result);
-            local choices = {};
-            for _, list in pairs(jsonResult) do
-                table.insert(choices, {
-                    text = list.name,
-                    subText = list.desc,
-                    list = list,
-                    image = trelloIcon(board.prefs.backgroundTopColor)
-                });
-            end
-            hs.chooser.new(function(choice)
-                if (choice ~= nil) then
-                    callback(choice.list)
-                end
-            end)
-              :rows(5)
-              :selectedRow(1)
-              :width(30)
-              :placeholderText('Select a List...')
               :searchSubText(true)
               :choices(choices)
               :show()
