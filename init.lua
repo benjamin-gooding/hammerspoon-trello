@@ -142,6 +142,37 @@ local utils = {
     }
 }
 
+local assetIcon = function(filename)
+    return hs.image.imageFromPath(hs.spoons.scriptPath() .. 'assets/' .. filename);
+end
+
+local trelloIcon = function(fillHexColour)
+    return hs.canvas
+            .new({ x = 0, y = 0, w = 300, h = 300 })
+            :insertElement({
+                action = "fill",
+                type = "rectangle",
+                roundedRectRadii = { xRadius = 40, yRadius = 40 },
+                fillColor = { hex = fillHexColour, alpha = 1 },
+                frame = { x = 0, y = 0, w = 300, h = 300 }
+            })
+            :insertElement({
+                action = "fill",
+                type = "rectangle",
+                roundedRectRadii = { xRadius = 15, yRadius = 15 },
+                fillColor = { hex = "#FFF", alpha = 1 },
+                frame = { x = 48, y = 48, w = 74, h = 186 }
+            })
+            :insertElement({
+                action = "fill",
+                type = "rectangle",
+                roundedRectRadii = { xRadius = 15, yRadius = 15 },
+                fillColor = { hex = "#FFF", alpha = 1 },
+                frame = { x = 168, y = 48, w = 74, h = 110 }
+            })
+            :imageFromCanvas();
+end
+
 local env = function(key)
     local defaultNewEnvValue = 'ADD_YOURS_HERE';
     local envFilePath = hs.fs.pathToAbsolute('~/') .. '/.trellospoon';
@@ -225,7 +256,8 @@ local selectTrelloBoard = function(callback)
                 table.insert(choices, {
                     text = board.name,
                     subText = board.desc,
-                    board = board
+                    board = board,
+                    image = trelloIcon(board.prefs.backgroundTopColor)
                 });
             end
             hs.chooser.new(function(choice)
@@ -283,7 +315,8 @@ local selectTrelloBoardList = function(board, callback)
                 table.insert(choices, {
                     text = list.name,
                     subText = list.desc,
-                    list = list
+                    list = list,
+                    image = trelloIcon(board.prefs.backgroundTopColor)
                 });
             end
             hs.chooser.new(function(choice)
@@ -343,20 +376,28 @@ end
 function obj:init()
     local choices = {
         {
-            text = 'Create a task',
+            text = 'Create task',
+            subText = 'Create a new card on a Trello board.',
             id = 'CREATE_CARD',
+            image = trelloIcon('#0B50AF')
         },
         {
-            text = 'Update task state',
+            text = 'Update task',
+            subText = 'Select a Trello board to move a card to a different list.',
             id = 'MOVE_CARD',
+            image = trelloIcon('#0B50AF')
         },
         {
-            text = 'View board in web browser',
+            text = 'View board',
+            subText = 'Open a selected Trello board in a web browser',
             id = 'OPEN_BOARD_IN_BROWSER',
+            image = assetIcon('chrome-icon.png')
         },
         {
-            text = 'View task in web browser',
+            text = 'View task',
+            subText = 'Open a selected Trello card in a web browser',
             id = 'VIEW_CARD_IN_BROWSER',
+            image = assetIcon('chrome-icon.png')
         }
     }
     hs.hotkey.bind({ "ctrl", "cmd" }, "t", function()
@@ -389,7 +430,7 @@ function obj:init()
                 end
             end
         end)
-          :rows(5)
+          :rows(2)
           :selectedRow(1)
           :width(30)
           :placeholderText('Select an action...')
